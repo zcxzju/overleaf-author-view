@@ -489,6 +489,11 @@ border-radius:4px;padding:6px 9px;margin:6px 0;overflow-wrap:anywhere;white-spac
 .subtable td{padding:6px 8px;border-bottom:1px solid var(--line)}
 .subtable td.n{text-align:right;color:var(--muted);white-space:nowrap}
 .arrow{color:var(--blue);font-weight:700;padding:0 6px}
+.nextline{font-family:"Noto Serif SC",Georgia,"Songti SC",serif;font-size:17px;line-height:1.9;
+color:var(--navy);background:var(--blue-soft);border-left:4px solid var(--blue);padding:14px 18px;margin:12px 0}
+details.fold{margin:6px 0}
+details.fold summary{cursor:pointer;font-size:13px;color:var(--muted);user-select:none}
+details.fold summary:hover{color:var(--blue)}
 """
 
 
@@ -653,6 +658,38 @@ def render_onepager(doc, records, author, profile=None, llm_out=None):
 # ---------------------------------------------------------------------------
 # next：偏好画像（自动推断）+ 下一步改动预测
 # ---------------------------------------------------------------------------
+def summarize_preds(preds, author):
+    """把预测列表压成一句中文总结。"""
+    if not preds:
+        return "历史记录太少，暂时看不出下一步会改什么。"
+    name = author or "该老师"
+    clauses = []
+    restore = [p for p in preds if p["kind"] == "恢复原话"]
+    if restore:
+        files = "、".join(sorted({p["location"] for p in restore if p["location"]}))
+        clauses.append(f"把被他人覆盖的 {len(restore)} 句原话改回"
+                       + (f"（{files}）" if files else ""))
+    subs = [p for p in preds if p["kind"] == "习惯替换"]
+    if subs:
+        p = subs[0]
+        m = re.match(r"“(.+?)” → “(.+?)”", p["suggest"])
+        if m:
+            clauses.append(f"按习惯把{p['location']}的 “{m.group(1)}” 改成 “{m.group(2)}”")
+    weak = [p for p in preds if p["kind"] == "倾向弱化"]
+    if weak:
+        toks = []
+        for p in weak[:3]:
+            m = re.search(r"“(.+?)”", p["suggest"])
+            if m:
+                toks.append(m.group(1))
+        if toks:
+            clauses.append(f"弱化 “{'、'.join(toks)}” 一类用词")
+    review = [p for p in preds if p["kind"] == "复查他人改动"]
+    if review:
+        clauses.append(review[0]["suggest"])
+    return f"{name}下一步最可能：" + "，".join(clauses) + "。"
+
+
 def render_next(doc, records, author, prof, preds, project_label):
     stats = aggregate(records)
     title = doc.get("title") or "Untitled"
@@ -717,21 +754,23 @@ def render_next(doc, records, author, prof, preds, project_label):
     sec1.append('</section>')
     body.append("".join(sec1))
 
-    # 02 下一步预测
+    # 02 下一步预测：一句话总结（详细依据折叠）
     body.append('<section><div class="sec-head"><span class="sec-no">02</span>'
-                '<h2>下一步改动预测</h2><span class="sec-gloss">按可能性排序</span></div>')
-    if not preds:
-        body.append('<p style="color:var(--muted)">（未发现可预测的改动信号。'
-                    '历史记录越多，预测越准。）</p>')
-    for i, p in enumerate(preds, 1):
-        cur = f'<div class="cur">{esc(p["current"])}</div>' if p.get("current") else ""
-        body.append(
-            f'<div class="pred"><div class="head">'
-            f'<span class="rank">{i:02d}</span>'
-            f'<span class="kindtag">{esc(p["kind"])}</span>'
-            f'<span class="loc">{esc(p["location"])}</span></div>'
-            f'{cur}<p class="sug">{esc(p["suggest"])}</p>'
-            f'<p class="why">{p["why"]}</p></div>')
+                '<h2>下一步改动预测</h2><span class="sec-gloss">一句话总结</span></div>')
+    body.append(f'<p class="nextline">{esc(summarize_preds(preds, author))}</p>')
+    if preds:
+        cards = []
+        for i, p in enumerate(preds, 1):
+            cur = f'<div class="cur">{esc(p["current"])}</div>' if p.get("current") else ""
+            cards.append(
+                f'<div class="pred"><div class="head">'
+                f'<span class="rank">{i:02d}</span>'
+                f'<span class="kindtag">{esc(p["kind"])}</span>'
+                f'<span class="loc">{esc(p["location"])}</span></div>'
+                f'{cur}<p class="sug">{esc(p["suggest"])}</p>'
+                f'<p class="why">{p["why"]}</p></div>')
+        body.append(f'<details class="fold"><summary>查看 {len(preds)} 条预测各自的依据</summary>'
+                    + "".join(cards) + '</details>')
     body.append('</section>')
 
     footer = (f'<footer><b>口径说明。</b>偏好画像与预测均由 oav 从 '
