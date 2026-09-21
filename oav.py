@@ -7,6 +7,7 @@ oav — Overleaf Author View
 
   report   : 该作者的改动记录一页 HTML（时间线 + 逐文件增删 diff）
   onepager : 以该作者原话与偏好口径为骨架的一页概览 HTML（启发式，可选 LLM 叙事）
+  next     : 从该作者历史改动自动推断偏好画像，并预测其下一步最可能的改动
 
 输入（二选一）：
   - Overleaf git 桥克隆目录（git log 按作者带完整提交）
@@ -18,7 +19,9 @@ oav — Overleaf Author View
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime as _dt
+import difflib
 import html as _html
 import json
 import os
@@ -220,6 +223,198 @@ def first_sentences(text, n=3):
 
 
 # ---------------------------------------------------------------------------
+# 偏好画像（从历史改动自动推断）
+# ---------------------------------------------------------------------------
+_STOPWORDS = set((
+    "a an the and or but if then else when of in on at to for with by from as "
+    "is are was were be been being we our us it its this that these those there "
+    "here not no nor so such than too very can could may might will would shall "
+    "should do does did have has had i you he she they them his her their"
+).split())
+
+_TOKEN = re.compile(r"[A-Za-z][A-Za-z\-']*|\d+(?:\.\d+)?|\\[a-zA-Z]+|[^\sA-Za-z\d]")
+
+
+def tokenize(s):
+    return _TOKEN.findall(_clean_latex(s).lower())
+
+
+def classify_record(r):
+    text = "\n".join((r.get("added") or []) + (r.get("removed") or []))
+    if re.search(r"\\cite|\\bibitem|bibliography|\.bib", text):
+        return "引用文献"
+    if re.search(r"\\(?:sub)*section|\\paragraph", text):
+        return "结构章节"
+    if re.search(r"\$|\\begin\{(?:equation|align|displaymath)|\\frac|\\sum|\\mathbb", text):
+        return "公式数学"
+    return "措辞表述"
+
+
+def _mine_line_pairs(rl, al, pairs):
+    ta, tb = tokenize(rl), tokenize(al)
+    sm = difflib.SequenceMatcher(a=ta, b=tb)
+    for op, i1, i2, j1, j2 in sm.get_opcodes():
+        if op != "replace":
+            continue
+        src = " ".join(ta[i1:i2]).strip(" ,.;:")
+        dst = " ".join(tb[j1:j2]).strip(" ,.;:")
+        if not src or not dst or src == dst:
+            continue
+        if len(src) > 60 or len(dst) > 60:
+            continue
+        pairs[(src, dst)] += 1
+
+
+def mine_substitutions(records):
+    """词级 diff 挖掘：老师反复把 X 改成 Y 的替换习惯。"""
+    pairs = collections.Counter()
+    for r in records:
+        rem, add = r.get("removed") or [], r.get("added") or []
+        if not rem or not add:
+            continue
+        sm = difflib.SequenceMatcher(a=rem, b=add)
+        for op, i1, i2, j1, j2 in sm.get_opcodes():
+            for rl, al in zip(rem[i1:i2], add[j1:j2]):
+                _mine_line_pairs(rl, al, pairs)
+    return pairs
+
+
+def token_habits(records):
+    """老师倾向删除 / 倾向加入的词（按记录计次，过滤停用词）。"""
+    deleted, added = collections.Counter(), collections.Counter()
+    for r in records:
+        ra = set(tokenize("\n".join(r.get("removed") or [])))
+        aa = set(tokenize("\n".join(r.get("added") or [])))
+        for t in ra - aa:
+            if t not in _STOPWORDS and len(t) > 2:
+                deleted[t] += 1
+        for t in aa - ra:
+            if t not in _STOPWORDS and len(t) > 2:
+                added[t] += 1
+    return deleted, added
+
+
+def build_auto_profile(records):
+    types = collections.Counter(classify_record(r) for r in records)
+    files = collections.Counter(r.get("file") or "(unknown)" for r in records)
+    hours = collections.Counter()
+    for r in records:
+        t = parse_time(r.get("time"))
+        if t:
+            hours[t.hour] += 1
+    deleted, added = token_habits(records)
+    return {
+        "types": types,
+        "files": files,
+        "hours": hours,
+        "subs": mine_substitutions(records),
+        "deleted": deleted,
+        "added": added,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 下一步改动预测
+# ---------------------------------------------------------------------------
+def _fmt_time(t):
+    return esc((t or "").replace("T", " ")[:16])
+
+
+def predict_next(all_records, author_records, author, doc_text):
+    preds = []
+    doc_norm = re.sub(r"\s+", " ", _clean_latex(doc_text)).lower()
+    doc_lines = doc_text.splitlines()
+
+    # 1) 被覆盖的原话：老师加过、当前文档里已不存在 → 可能改回
+    seen = set()
+    for r in sorted(author_records, key=lambda x: x.get("time") or ""):
+        for line in r.get("added") or []:
+            s = _clean_latex(line).strip()
+            if len(s) < 24:
+                continue
+            key = re.sub(r"\s+", " ", s).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if key[:40] not in doc_norm:
+                preds.append({
+                    "kind": "恢复原话", "score": 3.0,
+                    "location": r.get("file") or "",
+                    "current": "",
+                    "suggest": s,
+                    "why": f"老师在 {_fmt_time(r.get('time'))} 加入过这句话，"
+                           f"但当前文档中已不存在——可能被他人覆盖，老师大概率会改回。",
+                })
+
+    # 2) 习惯性替换：老师反复 X→Y，而当前文档仍有 X
+    for (src, dst), cnt in mine_substitutions(author_records).most_common(20):
+        if src in _STOPWORDS:
+            continue
+        n_occur = doc_norm.count(src)
+        if not n_occur:
+            continue
+        # 只出现一次的单词级替换，仅当它在文档中唯一时才预测（否则多为上下文噪音）
+        if cnt == 1 and " " not in src and n_occur > 1:
+            continue
+        for i, ln in enumerate(doc_lines, 1):
+            if src in _clean_latex(ln).lower():
+                preds.append({
+                    "kind": "习惯替换", "score": 2.0 + cnt,
+                    "location": f"{i} 行",
+                    "current": _clean_latex(ln).strip()[:200],
+                    "suggest": f"“{src}” → “{dst}”",
+                    "why": f"老师历史上 {cnt} 次把 “{src}” 改为 “{dst}”，"
+                           f"而当前文档第 {i} 行仍写作 “{src}”。",
+                })
+                break
+
+    # 3) 倾向删除的词仍出现在文档中 → 可能弱化/删改
+    deleted, _ = token_habits(author_records)
+    for tok, cnt in deleted.most_common(10):
+        if cnt < 2:
+            continue
+        for i, ln in enumerate(doc_lines, 1):
+            if re.search(r"\b" + re.escape(tok) + r"\b", _clean_latex(ln).lower()):
+                preds.append({
+                    "kind": "倾向弱化", "score": 1.0 + cnt * 0.5,
+                    "location": f"{i} 行",
+                    "current": _clean_latex(ln).strip()[:200],
+                    "suggest": f"考虑删改 “{tok}”",
+                    "why": f"老师历史上 {cnt} 次删除 “{tok}” 一类用词，"
+                           f"当前文档第 {i} 行仍有出现。",
+                })
+                break
+
+    # 4) 老师最后一次改动之后，他人又动了文档 → 老师会复查（常覆盖回去）
+    author_times = [parse_time(r.get("time")) for r in author_records]
+    author_times = [t for t in author_times if t]
+    if author_times:
+        last = max(author_times)
+        a = (author or "").lower()
+        later = {}
+        for r in all_records:
+            if a and a in (r.get("author") or "").lower():
+                continue
+            t = parse_time(r.get("time"))
+            if t and t > last:
+                key = (r.get("author") or "(unknown)", r.get("file") or "(unknown)")
+                later[key] = later.get(key, 0) + 1
+        for (au, f), cnt in sorted(later.items()):
+            preds.append({
+                "kind": "复查他人改动", "score": 1.5,
+                "location": f,
+                "current": "",
+                "suggest": f"复查 {au} 在 {f} 的 {cnt} 处后续改动",
+                "why": f"{au} 在老师最后一次改动（{_fmt_time(last.isoformat())}）之后"
+                       f"又修改了 {f}——这是多人协作中最常被覆盖回去的位置。",
+            })
+
+    preds.sort(key=lambda p: -p["score"])
+    return preds[:12]
+
+
+
+# ---------------------------------------------------------------------------
 # 模板样式
 # ---------------------------------------------------------------------------
 BASE_CSS = """
@@ -275,7 +470,22 @@ footer{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;font-si
 .print-btn:hover{background:var(--navy-2)}
 @media(max-width:720px){main{padding:36px 16px 28px}.sec-gloss{display:none}.timeline li{grid-template-columns:1fr;gap:2px}}
 @media print{body{font-size:12px;line-height:1.6}main{max-width:none;padding:0}.toolbar{display:none}
-section,figure,.entry,.advisor{break-inside:avoid}section{border-top:1px solid #999}}
+section,figure,.entry,.advisor,.pred{break-inside:avoid}section{border-top:1px solid #999}}
+.kindtag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.08em;padding:2px 9px;
+border-radius:11px;color:#fff;background:var(--blue);margin-right:8px;flex:none}
+.pred{border:1px solid var(--line);border-left:4px solid var(--navy);border-radius:6px;
+padding:12px 16px;margin:12px 0;background:var(--paper)}
+.pred .head{display:flex;align-items:center;gap:4px}
+.pred .rank{font-family:"Noto Serif SC",Georgia,serif;font-weight:700;color:var(--navy);margin-right:6px}
+.pred .loc{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted);margin-left:auto}
+.pred .sug{margin:8px 0 4px;font-weight:600;color:var(--navy)}
+.pred .cur{font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--soft);
+border-radius:4px;padding:6px 9px;margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.pred .why{font-size:13px;color:var(--ink-soft);margin:6px 0 0}
+.subtable{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+.subtable td{padding:6px 8px;border-bottom:1px solid var(--line)}
+.subtable td.n{text-align:right;color:var(--muted);white-space:nowrap}
+.arrow{color:var(--blue);font-weight:700;padding:0 6px}
 """
 
 
@@ -438,6 +648,98 @@ def render_onepager(doc, records, author, profile=None, llm_out=None):
 
 
 # ---------------------------------------------------------------------------
+# next：偏好画像（自动推断）+ 下一步改动预测
+# ---------------------------------------------------------------------------
+def render_next(doc, records, author, prof, preds, project_label):
+    stats = aggregate(records)
+    title = doc.get("title") or "Untitled"
+    head = f"""<header class="masthead">
+<p class="eyebrow">{esc(project_label)} · AUTHOR PROFILE & NEXT-EDIT FORECAST</p>
+<h1>{esc(author or "该老师")} 的偏好画像与下一步预测</h1>
+<p class="subtitle">{esc(title)}</p>
+<div class="meta">
+<span>基于 <b>{stats['n']}</b> 条该作者改动自动推断</span>
+<span>{esc(stats['first'] or '—')} → {esc(stats['last'] or '—')}</span>
+<span>无需手工维护 profile</span>
+</div></header>"""
+
+    body = []
+
+    # 01 偏好画像
+    sec1 = ['<section><div class="sec-head"><span class="sec-no">01</span>'
+            '<h2>偏好画像</h2><span class="sec-gloss">从历史改动自动推断</span></div>']
+    sec1.append('<div class="stats">'
+                f'<div class="stat"><b>{stats["n"]}</b><span>条编辑</span></div>'
+                f'<div class="stat"><b>{len(stats["files"])}</b><span>个文件</span></div>'
+                f'<div class="stat"><b>{stats["total_added"]}</b><span>行新增</span></div>'
+                f'<div class="stat"><b>{stats["total_removed"]}</b><span>行删除</span></div>'
+                '</div>')
+
+    if prof["types"]:
+        mx = max(prof["types"].values()) or 1
+        lis = "".join(
+            f'<li><div class="day">{esc(k)}</div>'
+            f'<div>{v} 次<div class="bar" style="--p:{round(100 * v / mx)}%"></div></div></li>'
+            for k, v in prof["types"].most_common())
+        sec1.append(f'<p style="margin:14px 0 2px;color:var(--ink-soft)"><b>改动类型分布</b></p>'
+                    f'<ul class="timeline">{lis}</ul>')
+
+    if prof["subs"]:
+        rows = "".join(
+            f'<tr><td>“{esc(src)}”<span class="arrow">→</span>“{esc(dst)}”</td>'
+            f'<td class="n">×{cnt}</td></tr>'
+            for (src, dst), cnt in prof["subs"].most_common(8))
+        sec1.append(f'<p style="margin:14px 0 2px;color:var(--ink-soft)"><b>高频替换习惯</b></p>'
+                    f'<table class="subtable">{rows}</table>')
+
+    del_chips = "".join(f'<span class="chip">删 “{esc(t)}” ×{c}</span>'
+                        for t, c in prof["deleted"].most_common(8) if c >= 1)
+    add_chips = "".join(f'<span class="chip">增 “{esc(t)}” ×{c}</span>'
+                        for t, c in prof["added"].most_common(8) if c >= 1)
+    if del_chips or add_chips:
+        sec1.append('<p style="margin:14px 0 2px;color:var(--ink-soft)"><b>用词倾向</b></p>'
+                    f'<div class="chips">{del_chips}{add_chips}</div>')
+
+    file_chips = "".join(f'<span class="chip">{esc(f)} ×{c}</span>'
+                         for f, c in prof["files"].most_common(6))
+    if file_chips:
+        sec1.append('<p style="margin:14px 0 2px;color:var(--ink-soft)"><b>常改文件</b></p>'
+                    f'<div class="chips">{file_chips}</div>')
+
+    hour_chips = "".join(f'<span class="chip">{h:02d} 时 ×{c}</span>'
+                         for h, c in sorted(prof["hours"].most_common(5)))
+    if hour_chips:
+        sec1.append('<p style="margin:14px 0 2px;color:var(--ink-soft)"><b>活跃时段</b></p>'
+                    f'<div class="chips">{hour_chips}</div>')
+    sec1.append('</section>')
+    body.append("".join(sec1))
+
+    # 02 下一步预测
+    body.append('<section><div class="sec-head"><span class="sec-no">02</span>'
+                '<h2>下一步改动预测</h2><span class="sec-gloss">按可能性排序</span></div>')
+    if not preds:
+        body.append('<p style="color:var(--muted)">（未发现可预测的改动信号。'
+                    '历史记录越多，预测越准。）</p>')
+    for i, p in enumerate(preds, 1):
+        cur = f'<div class="cur">{esc(p["current"])}</div>' if p.get("current") else ""
+        body.append(
+            f'<div class="pred"><div class="head">'
+            f'<span class="rank">{i:02d}</span>'
+            f'<span class="kindtag">{esc(p["kind"])}</span>'
+            f'<span class="loc">{esc(p["location"])}</span></div>'
+            f'{cur}<p class="sug">{esc(p["suggest"])}</p>'
+            f'<p class="why">{p["why"]}</p></div>')
+    body.append('</section>')
+
+    footer = (f'<footer><b>口径说明。</b>偏好画像与预测均由 oav 从 '
+              f'{esc(author or "该老师")} 的历史改动中确定性推断（词级 diff 对齐 + 覆盖检测），'
+              f'不调用外部模型；历史记录越完整，画像越准。文档：{esc(title)}。</footer>')
+    return _page(f"{author or 'Author'} — 偏好画像与下一步预测",
+                 head, "".join(body) + footer, doc_title=title)
+
+
+
+# ---------------------------------------------------------------------------
 # LLM 叙事模式（可选，OpenAI 兼容接口）
 # ---------------------------------------------------------------------------
 def llm_narrative(doc, records, author, profile, endpoint, model, api_key):
@@ -527,6 +829,24 @@ def _write(path, content):
         f.write(content)
 
 
+def cmd_next(args):
+    with open(args.doc, "r", encoding="utf-8") as f:
+        doc_text = f.read()
+    doc = parse_doc(doc_text)
+    all_records = load_records(args.changes)
+    author_records = filter_records(all_records, args.author)
+    if not author_records:
+        print(f"未找到作者「{args.author}」的任何改动记录。")
+        sys.exit(1)
+    prof = build_auto_profile(author_records)
+    preds = predict_next(all_records, author_records, args.author, doc_text)
+    html_out = render_next(doc, author_records, args.author, prof, preds,
+                           project_label=args.project or args.changes)
+    _write(args.output, html_out)
+    print(f"已生成：{args.output}（画像基于 {len(author_records)} 条记录，"
+          f"{len(preds)} 条下一步预测）")
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="oav", description="Overleaf Author View — 按作者提取改动，生成老师偏好的一页 HTML")
@@ -550,6 +870,14 @@ def main():
     p2.add_argument("--llm-model", default="deepseek-chat")
     p2.add_argument("--llm-key", default="")
     p2.set_defaults(fn=cmd_onepager)
+
+    p3 = sub.add_parser("next", help="自动推断老师偏好画像，并预测其下一步改动")
+    p3.add_argument("--doc", required=True, help="当前主文档（.tex / 文本）")
+    p3.add_argument("--changes", required=True, help="历史：git 目录 或 JSONL")
+    p3.add_argument("--author", default="", help="老师作者名（子串匹配）")
+    p3.add_argument("--output", default="next.html")
+    p3.add_argument("--project", default="", help="项目标签")
+    p3.set_defaults(fn=cmd_next)
 
     args = ap.parse_args()
     args.fn(args)
