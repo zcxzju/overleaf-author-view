@@ -1,7 +1,7 @@
 {
   "name": "Senior teacher",
   "role": "senior",
-  "subtitle": "Pricing and Repeat Purchases under Social Comparison — One-Page Summary",
-  "framing": "表述口径：固定价格与购买响应；social comparison 描述模型、FOMO 描述行为；target item 而非预设稀有；结论强度克制。",
-  "chips": ["固定价格与购买响应", "social comparison 模型 / FOMO 行为", "target item 而非预设稀有", "结论强度克制", "保留现实动机"]
+  "subtitle": "Pricing and Fleet Rebalancing under Weather Shocks — One-Page Summary",
+  "framing": "表述口径：固定价格与需求响应；weather shock 描述环境、schedule displacement 描述行为；rebalancing capacity 而非预设车队；结论强度克制。",
+  "chips": ["固定价格与需求响应", "weather shock 环境 / displacement 行为", "rebalancing capacity 而非预设车队", "结论强度克制", "保留现实动机"]
 }

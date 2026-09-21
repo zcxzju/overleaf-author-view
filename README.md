@@ -98,17 +98,28 @@ python3 oav.py next     --doc examples/main.sample.tex --changes examples/histor
   --author senior --output /tmp/next-senior.html
 ```
 
-### Sample 输出（已生成，可直接查看）
+### Sample 输出（在线可直接查看）
 
-由 `examples/` 下的合成数据（senior/junior 双作者）生成，仓库内位于 [`examples/output/`](examples/output/)：
+由 `examples/` 下的**全合成数据**（bike-share 题材，与任何真实稿件无关）生成，通过 GitHub Pages 直接渲染：
 
-| 页面 | 文件 | 在线预览 |
-|---|---|---|
-| 老师偏好画像 + 下一步改动预测 | [next-senior.html](examples/output/next-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/next-senior.html) |
-| 改动记录（时间线 + diff） | [report-senior.html](examples/output/report-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/report-senior.html) |
-| 老师偏好一页概览 | [onepager-senior.html](examples/output/onepager-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/onepager-senior.html) |
+| 页面 | 在线地址 |
+|---|---|
+| **老师偏好画像 + 下一步改动预测**（主 sample） | <https://zcxzju.github.io/overleaf-author-view/> |
+| 改动记录（时间线 + diff） | <https://zcxzju.github.io/overleaf-author-view/report.html> |
+| 老师偏好一页概览 | <https://zcxzju.github.io/overleaf-author-view/onepager.html> |
 
-在 `next-senior.html` 的 sample 里可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被精确定位到当前文档第 44 行。
+源文件在 [`docs/`](docs/)（GitHub Pages 托管目录），重新生成方式：
+
+```bash
+python3 oav.py next     --doc examples/main.sample.tex --changes examples/history.sample.jsonl \
+  --author senior --project "demo (synthetic)" --output docs/index.html
+python3 oav.py report   --input examples/history.sample.jsonl --author senior \
+  --project "demo (synthetic)" --output docs/report.html
+python3 oav.py onepager --doc examples/main.sample.tex --changes examples/history.sample.jsonl \
+  --author senior --profile examples/profile.senior.json --output docs/onepager.html
+```
+
+在主 sample 里可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被精确定位到当前文档第 44 行。
 
 ## 老师偏好从哪来
 
@@ -122,10 +133,10 @@ python3 oav.py next     --doc examples/main.sample.tex --changes examples/histor
 ```
 oav.py                        # 单文件 CLI（零依赖）
 examples/
-  main.sample.tex             # 合成示例文档（非真实稿件）
+  main.sample.tex             # 合成示例文档（bike-share 题材，与真实稿件无关）
   history.sample.jsonl        # 合成示例历史（senior/junior 双作者）
   profile.senior.json         # 示例老师画像
-  output/                     # 已生成的 sample HTML（可直接查看）
+docs/                         # GitHub Pages：已生成的 sample 页面（在线渲染）
 LICENSE                       # MIT
 ```
 

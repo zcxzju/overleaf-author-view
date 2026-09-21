@@ -2,45 +2,45 @@
 \usepackage{amsmath}
 \begin{document}
 
-\TITLE{Does Social Comparison Shape Blind-Box Design?\\Pricing and Repeat Purchases}
-\KEYWORDS{blind boxes; probabilistic selling; social comparison; repeat purchases}
+\TITLE{Rain or Shine: Does Weather Shape Bike-Share Demand?\\Pricing and Fleet Rebalancing}
+\KEYWORDS{bike sharing; weather shocks; demand elasticity; fleet rebalancing}
 
-\ABSTRACT{Consumers who stop buying blind boxes may still compare their outcomes
-with a peer's success. We study how this persistent social comparison affects a
-firm's price and product design in a two-period model. The firm commits to a fixed
-price and a target-item probability. Under the maintained full-entry equilibrium,
-the model delivers a three-region policy rule: deterministic low-item selling,
-a blind box with repeat purchases after either unsuccessful history, and
-deterministic high-item selling when comparison pressure exceeds a threshold.}
+\ABSTRACT{Riders who skip a trip on a rainy day may still shift their later
+travel plans. We study how short-run weather shocks affect a platform's
+pricing and fleet rebalancing in a two-period model. The operator commits to
+a fixed price and a rebalancing capacity. Under the maintained equilibrium,
+the model delivers a three-region dispatch rule: static pricing in mild
+weather, dynamic rebalancing after either demand shock, and capacity
+expansion when weather sensitivity exceeds a threshold.}
 
 \section{Introduction}
-Firms increasingly sell stochastic outcomes. Video-game loot boxes and hidden-edition
-collectibles ask consumers to pay before learning whether they receive a rare item.
-These markets make rare outcomes visible: platforms display openings, and brands
-promote hidden editions and unboxing content.
+Platforms increasingly sell mobility under uncertainty. Dockless bike-share
+systems ask riders to commit before learning whether a nearby bike is
+available. These systems make demand swings visible: apps display nearby
+bikes, and operators publish heat maps of trip origins.
 
 \section{Model}
-Two consumers observe each other's outcomes over two periods. A purchase yields the
-high-value target item $H$ with probability $q$ and a low-value item $L$ otherwise.
-The firm commits to a fixed price $p$ and a draw probability $q$.
+Two riders observe each other's trip outcomes over two periods. A trip
+succeeds with probability $q$ and fails (no bike nearby) otherwise.
+The operator commits to a fixed price $p$ and a rebalancing capacity $K$.
 
-\section{Fixed Social Comparison}
-When the peer already owns the target item, the focal consumer suffers a comparison
-loss $\ell$ after drawing $L$, which motivates repeat purchases. A blind box is
-optimal when the value gap and comparison pressure are high.
+\section{Static Weather Response}
+When it rained in the morning, the evening rider suffers a scheduling cost
+$c$ after a failed trip, which motivates deferred trips. Dynamic rebalancing
+is optimal when the demand gap and weather sensitivity are high.
 
-\section{Dynamic Social Comparison}
-Conditional on obtaining $L$ in period 1, a consumer faces state $(0,1)$ if her peer
-received $H$, or $(0,0)$ if neither did. A fixed price induces one of four response
-profiles: UR, CR, NR, or RR.
+\section{Dynamic Weather Response}
+Conditional on a failed trip in period 1, a rider faces state $(0,1)$ if her
+neighbor succeeded, or $(0,0)$ if neither did. A fixed price induces one of
+four response profiles: UR, CR, NR, or RR.
 
 \section{Managerial Insights}
-Stronger social comparison can make the target item more widely available and
-eventually eliminate probabilistic selling. The firm does not choose consumers'
-comparison sensitivity.
+Stronger weather sensitivity can make rebalancing capacity more widely
+valuable and eventually eliminate flat pricing. The operator does not choose
+riders' weather sensitivity.
 
 \section{Concluding Remarks}
 Persistent exposure can support higher prices without creating additional
-consumption value. Broader repeat purchasing gives consumers higher welfare.
+trip value. Broader fleet coverage gives riders higher welfare.
 
 \end{document}
