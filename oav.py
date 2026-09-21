@@ -323,7 +323,10 @@ def _fmt_time(t):
 def predict_next(all_records, author_records, author, doc_text):
     preds = []
     doc_norm = re.sub(r"\s+", " ", _clean_latex(doc_text)).lower()
-    doc_lines = doc_text.splitlines()
+    # 只在正文行上定位预测；模板/元信息行（\TITLE、\ABSTRACT 等）不算“要改的地方”
+    doc_lines = [ln for ln in doc_text.splitlines()
+                 if not re.match(r"\s*\\(?:documentclass|usepackage|TITLE|KEYWORDS|"
+                                 r"ABSTRACT|begin|end)\b", ln)]
 
     # 1) 被覆盖的原话：老师加过、当前文档里已不存在 → 可能改回
     seen = set()

@@ -21,6 +21,14 @@ Overleaf 历史 (git clone / JSONL 导出)
         └──► next     ：偏好画像 + 下一步改动预测（确定性，无需联网）
 ```
 
+## Sample
+
+`next` 命令的输出长这样（合成 bike-share 数据，与任何真实稿件无关）：
+
+![sample：senior 的偏好画像与下一步预测](assets/sample.png)
+
+图中可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被定位到当前文档正文行。
+
 ## 安装
 
 需要 Python 3.9+，无第三方依赖。
@@ -98,28 +106,18 @@ python3 oav.py next     --doc examples/main.sample.tex --changes examples/histor
   --author senior --output /tmp/next-senior.html
 ```
 
-### Sample 输出（在线可直接查看）
+### Sample 输出
 
-由 `examples/` 下的**全合成数据**（bike-share 题材，与任何真实稿件无关）生成，通过 GitHub Pages 直接渲染：
-
-| 页面 | 在线地址 |
-|---|---|
-| **老师偏好画像 + 下一步改动预测**（主 sample） | <https://zcxzju.github.io/overleaf-author-view/> |
-| 改动记录（时间线 + diff） | <https://zcxzju.github.io/overleaf-author-view/report.html> |
-| 老师偏好一页概览 | <https://zcxzju.github.io/overleaf-author-view/onepager.html> |
-
-源文件在 [`docs/`](docs/)（GitHub Pages 托管目录），重新生成方式：
+见上文 [Sample](#sample) 的截图（[`assets/sample.png`](assets/sample.png)）。重新生成：
 
 ```bash
-python3 oav.py next     --doc examples/main.sample.tex --changes examples/history.sample.jsonl \
-  --author senior --project "demo (synthetic)" --output docs/index.html
-python3 oav.py report   --input examples/history.sample.jsonl --author senior \
-  --project "demo (synthetic)" --output docs/report.html
-python3 oav.py onepager --doc examples/main.sample.tex --changes examples/history.sample.jsonl \
-  --author senior --profile examples/profile.senior.json --output docs/onepager.html
+python3 oav.py next --doc examples/main.sample.tex --changes examples/history.sample.jsonl \
+  --author senior --project "demo (synthetic)" --output /tmp/sample.html
+# 可选：用 headless Chrome 截成 PNG
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new --hide-scrollbars --force-device-scale-factor=2 \
+  --window-size=1100,2600 --screenshot=assets/sample.png file:///tmp/sample.html
 ```
-
-在主 sample 里可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被精确定位到当前文档第 44 行。
 
 ## 老师偏好从哪来
 
@@ -132,11 +130,12 @@ python3 oav.py onepager --doc examples/main.sample.tex --changes examples/histor
 
 ```
 oav.py                        # 单文件 CLI（零依赖）
+assets/
+  sample.png                  # README 里的 sample 截图（合成数据）
 examples/
   main.sample.tex             # 合成示例文档（bike-share 题材，与真实稿件无关）
   history.sample.jsonl        # 合成示例历史（senior/junior 双作者）
   profile.senior.json         # 示例老师画像
-docs/                         # GitHub Pages：已生成的 sample 页面（在线渲染）
 LICENSE                       # MIT
 ```
 
