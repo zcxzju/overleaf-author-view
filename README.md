@@ -98,6 +98,18 @@ python3 oav.py next     --doc examples/main.sample.tex --changes examples/histor
   --author senior --output /tmp/next-senior.html
 ```
 
+### Sample 输出（已生成，可直接查看）
+
+由 `examples/` 下的合成数据（senior/junior 双作者）生成，仓库内位于 [`examples/output/`](examples/output/)：
+
+| 页面 | 文件 | 在线预览 |
+|---|---|---|
+| 老师偏好画像 + 下一步改动预测 | [next-senior.html](examples/output/next-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/next-senior.html) |
+| 改动记录（时间线 + diff） | [report-senior.html](examples/output/report-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/report-senior.html) |
+| 老师偏好一页概览 | [onepager-senior.html](examples/output/onepager-senior.html) | [htmlpreview](https://htmlpreview.github.io/?https://github.com/zcxzju/overleaf-author-view/blob/main/examples/output/onepager-senior.html) |
+
+在 `next-senior.html` 的 sample 里可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被精确定位到当前文档第 44 行。
+
 ## 老师偏好从哪来
 
 1. **原话优先**：该老师历史改动中被加入的句子，以「蓝字块」呈现——这是其偏好的最直接证据。
@@ -113,6 +125,7 @@ examples/
   main.sample.tex             # 合成示例文档（非真实稿件）
   history.sample.jsonl        # 合成示例历史（senior/junior 双作者）
   profile.senior.json         # 示例老师画像
+  output/                     # 已生成的 sample HTML（可直接查看）
 LICENSE                       # MIT
 ```
 
