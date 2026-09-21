@@ -25,7 +25,7 @@ Overleaf 历史 (git clone / JSONL 导出)
 
 `next` 命令的输出长这样（合成 bike-share 数据，与任何真实稿件无关）：
 
-![sample：senior 的偏好画像与下一步预测](assets/sample.png)
+![sample：senior 的偏好画像与下一步预测](assets/sample.png?v=2)
 
 图中可以看到：senior 被 junior 覆盖的 5 句原话全部被识别为「恢复原话」候选，「gives → can give」的习惯替换被定位到当前文档正文行。
 
